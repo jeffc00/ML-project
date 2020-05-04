@@ -1,0 +1,108 @@
+---
+title: "ML Project"
+author: "Jeff C"
+date: "5/3/2020"
+output:
+  html_document:
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and train a model to predict the manner in which the exercise was done.
+
+## Model Building
+```{r}
+training <- read.csv("coursera/ml-project/pml-training.csv")
+testing <- read.csv("coursera/ml-project/pml-testing.csv")
+```
+
+We start by appending together the training and testing datasets to make data cleaning easier. Also, a new column called `train` is created to help keep track of these datasets, which will later be split back again into training and testing components.  
+```{r}
+training$train <- 1
+testing$train <- 0
+classe <- factor(training$classe)
+predictors <- rbind(training[, -160], testing[, -160])
+dim(predictors)
+```
+
+Let's drop all the columns that have mostly missing values, since they don't add much information.
+```{r}
+predictors <- predictors[, colSums(is.na(predictors)) == 0]
+dim(predictors)
+```
+
+Next we drop the columns 1 through 7, which have little or no relationship with the response variable.
+```{r}
+predictors <- predictors[, -c(1:7)]
+dim(predictors)
+```
+
+Now that the data is clean, we split the `predictors` dataframe back into training and testing sets.
+```{r}
+training_full <- predictors[predictors$train == 1, -53]
+testing <- predictors[predictors$train == 0, -53]
+```
+
+We are ready to build our model. Let's start by splitting the full training set into training and validation sets, using a 60/40 split and random seed to 42 in order to guarantee reproducibility of the results.
+```{r}
+library(caret)
+set.seed(42)
+inTrain <- createDataPartition(classe, p = 0.6, list = FALSE)
+training <- cbind(training_full, classe)[inTrain, ]
+validation <- cbind(training_full, classe)[-inTrain, ]
+```
+
+### Multinomial Logistic Regression
+Since the response variable is categorical and has multiple levels, a good place to start is by fitting a multinomial logistic regression model. Since this is a rather simple linear model, we expect it to have a higher bias but lower variance.
+```{r}
+m <- train(classe ~ .,
+           method = "multinom",
+           data = training,
+           preProc = c("center", "scale"),
+           trace = FALSE,
+           allowParallel = TRUE,
+           trControl = trainControl(method = "boot", number = 10))
+```
+
+In order to look for signs of over or underfitting, we compare the model's accuracy on the training set and on the validation set.  
+
+* Training set confusion matrix:
+```{r}
+confusionMatrix(training$classe, predict(m, training[, -53]))
+```
+
+* Validation set confusion matrix:
+```{r}
+confusionMatrix(validation$classe, predict(m, validation[, -53]))
+```
+
+### Random Forest
+As we can see above, both accuracy scores are quite close but maybe we can do better with a nonlinear model. Let's try to fit a Random Forest model this time.
+```{r}
+m <- train(classe ~ .,
+           method = "rf",
+           data = training,
+           preProc = c("center", "scale"),
+           trace = FALSE,
+           allowParallel = TRUE,
+           trControl = trainControl(method = "boot", number = 10))
+```
+
+* Training set confusion matrix:
+```{r}
+confusionMatrix(training$classe, predict(m, training[, -53]))
+```
+
+* Validation set confusion matrix:
+```{r}
+confusionMatrix(validation$classe, predict(m, validation[, -53]))
+```
+
+# Conclusion
+As we can see from the results above, the Random Forest model is far superior than the simple Multinomial Logistic Regression, having much better fit and accuracy. Hence we shall keep that as our final model.
